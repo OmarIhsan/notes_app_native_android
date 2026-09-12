@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Highlighter Pen -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M16.5,3.5l4,4l-11,11l-4,-4L16.5,3.5zM2,22h4v-2H2v2zM15,5l4,4"/>
+    <path
+        android:fillColor="#66000000"
+        android:pathData="M2,18l4,-4l-2,-2z"/>
+</vector>

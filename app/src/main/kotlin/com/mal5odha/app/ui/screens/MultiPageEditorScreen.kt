@@ -31,6 +31,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.material.icons.Icons
@@ -43,6 +44,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import com.mal5odha.core.pdf.viewport.ZoomTransformSolver
+import com.mal5odha.core.pdf.viewport.TwoFingerGestureMode
+import com.mal5odha.core.pdf.viewport.TwoFingerGestureArbitrator
+import com.mal5odha.core.pdf.viewport.TwoFingerIntentGestureDetector
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -144,6 +154,7 @@ fun MultiPageEditorScreen(
     var noteDetailsInfo by remember { mutableStateOf<Pair<Long, Int>?>(null) }
 
     var documentZoomScale by remember { mutableFloatStateOf(1f) }
+    var zoomState by remember { mutableStateOf(ZoomTransformSolver.ZoomState()) }
     var smartGesturesEnabled by remember { mutableStateOf(true) }
 
     val lazyListState = rememberLazyListState()
@@ -530,6 +541,72 @@ fun MultiPageEditorScreen(
                         .weight(1f)
                         .fillMaxHeight()
                         .background(deskColor)
+                        .clipToBounds()
+                        .pointerInput(Unit) {
+                            val slop = viewConfiguration.touchSlop
+                            val detector = TwoFingerIntentGestureDetector(touchSlop = slop, zoomSlop = slop, invertScrollDirection = true)
+
+                            awaitEachGesture {
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val activePointers = event.changes.filter { it.pressed }
+
+                                    if (activePointers.size >= 2) {
+                                        // Multi-touch active: consume so child canvases don't receive ink
+                                        activePointers.forEach { it.consume() }
+
+                                        val currentCentroid = activePointers.fold(Offset.Zero) { acc, c ->
+                                            acc + c.position
+                                        } / activePointers.size.toFloat()
+
+                                        val currentSpan = activePointers.fold(0f) { acc, c ->
+                                            acc + (c.position - currentCentroid).getDistance()
+                                        } / activePointers.size.toFloat()
+
+                                        if (detector.mode == TwoFingerGestureMode.UNDECIDED && detector.isInitialState()) {
+                                            detector.onPointersDown(currentCentroid, currentSpan)
+                                        }
+
+                                        val step = detector.onPointersMove(
+                                            currentCentroid = currentCentroid,
+                                            currentSpan = currentSpan,
+                                            isZoomed = zoomState.scale > 1.05f
+                                        )
+
+                                        when (step.mode) {
+                                            TwoFingerGestureMode.SCROLL_LOCKED -> {
+                                                if (step.verticalScrollDelta != 0f) {
+                                                    lazyListState.dispatchRawDelta(step.verticalScrollDelta)
+                                                }
+                                            }
+                                            TwoFingerGestureMode.ZOOM_LOCKED -> {
+                                                val result = ZoomTransformSolver.calculateZoomStep(
+                                                    previousState = zoomState,
+                                                    zoomChange = step.zoomChange,
+                                                    panDeltaX = step.panDeltaX,
+                                                    panDeltaY = 0f, // continuous vertical scrolling suppressed
+                                                    focalPointX = currentCentroid.x,
+                                                    viewportWidth = size.width.toFloat()
+                                                )
+                                                zoomState = result.zoomState
+                                            }
+                                            TwoFingerGestureMode.UNDECIDED -> {
+                                                // Zero transformation dispatched while accumulating slop
+                                            }
+                                        }
+                                    } else {
+                                        detector.onPointersUp()
+                                        if (activePointers.isEmpty()) {
+                                            // Settle zoom state cleanly with zero drift
+                                            if (zoomState.scale <= 1.0f) {
+                                                zoomState = ZoomTransformSolver.ZoomState(scale = 1.0f, panX = 0f)
+                                            }
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
                 ) {
             when {
                 uiState.isLoading || uiState.document == null -> {
@@ -560,12 +637,20 @@ fun MultiPageEditorScreen(
                     // ─── Virtualized Continuous Document Page Stream ────────────────────
                     LazyColumn(
                         state = lazyListState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = zoomState.scale
+                                scaleY = zoomState.scale
+                                translationX = zoomState.panX
+                                translationY = 0f
+                                transformOrigin = TransformOrigin(0f, 0f)
+                            },
                         contentPadding = PaddingValues(
-                            top = 84.dp,
-                            bottom = 100.dp,
                             start = 16.dp,
-                            end = 16.dp
+                            end = 16.dp,
+                            top = 16.dp,
+                            bottom = 96.dp
                         ),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -910,6 +995,44 @@ fun MultiPageEditorScreen(
                         onDismiss = { showRevisionSheet = false }
                     )
                 }
+                // ─── Floating Zoom Reset Chip ─────────────────────────────────────────
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = zoomState.scale > 1.05f,
+                    enter = fadeIn() + slideInVertically { it / 2 },
+                    exit = fadeOut() + slideOutVertically { it / 2 },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 24.dp, bottom = 120.dp)
+                ) {
+                    Surface(
+                        onClick = {
+                            zoomState = ZoomTransformSolver.ZoomState(scale = 1.0f, panX = 0f)
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ZoomOutMap,
+                                contentDescription = "Reset Zoom",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${(zoomState.scale * 100).toInt()}% (Reset)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             } // Close Box(modifier = Modifier.weight(1f))
             } // Close Row
         } // Close AdaptiveDockScaffold
@@ -1044,16 +1167,19 @@ private fun PageCard(
             modifier
                 .fillMaxWidth()
                 .aspectRatio(pageAspectRatio)
-                .clipToBounds()
+                .shadow(4.dp, RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(8.dp))
         } else {
             modifier
+                .wrapContentSize()
                 .widthIn(max = 900.dp)
-                .fillMaxWidth((0.92f * documentZoomScale).coerceIn(0.35f, 1.0f))
+                .fillMaxWidth(0.92f)
                 .aspectRatio(pageAspectRatio)
                 .defaultMinSize(minHeight = 400.dp)
-                .clipToBounds()
+                .shadow(4.dp, RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(8.dp))
         },
-        shape = RoundedCornerShape(4.dp),
+        shape = RoundedCornerShape(8.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = cardElevation),
         border = cardBorder,
         colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -1061,7 +1187,7 @@ private fun PageCard(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .clipToBounds()
         ) {
             // Light background fill

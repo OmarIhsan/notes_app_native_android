@@ -85,6 +85,12 @@ import com.mal5odha.core.ink.models.EraserTarget
 import com.mal5odha.core.ink.models.InkTool
 import com.mal5odha.core.ink.ui.DirectPageCanvas
 import com.mal5odha.core.pdf.viewport.ViewportState
+import com.mal5odha.core.ink.laser.LaserConfig
+import com.mal5odha.core.ink.laser.LaserConstants
+import com.mal5odha.core.ink.laser.LaserMode
+import com.mal5odha.core.ink.laser.LaserPointerOverlay
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -138,6 +144,8 @@ fun MultiPageEditorScreen(
     val mutations by viewModel.mutations.collectAsState()
 
     var currentTool by remember { mutableStateOf(InkTool.PEN) }
+    var laserConfig by remember { mutableStateOf(LaserConfig()) }
+    var showLaserOptionsPopup by remember { mutableStateOf(false) }
 
     var selectedStrokes by remember { mutableStateOf<List<com.mal5odha.core.ink.models.Stroke>>(emptyList()) }
     var selectedColor by remember { mutableStateOf(android.graphics.Color.BLACK) }
@@ -440,6 +448,94 @@ fun MultiPageEditorScreen(
                                 tint = if (currentTool == InkTool.LASSO) PrimaryCyanBlue else capsuleIconTint,
                                 modifier = Modifier.size(22.dp)
                             )
+                        }
+
+                        // ─── Laser Pointer Tool (Presentation Mode) ─────────────
+                        Box {
+                            IconButton(
+                                onClick = {
+                                    if (currentTool == InkTool.LASER) {
+                                        showLaserOptionsPopup = !showLaserOptionsPopup
+                                    } else {
+                                        currentTool = InkTool.LASER
+                                    }
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Highlight,
+                                    contentDescription = "Laser Pointer",
+                                    tint = if (currentTool == InkTool.LASER) PrimaryCyanBlue else capsuleIconTint,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showLaserOptionsPopup,
+                                onDismissRequest = { showLaserOptionsPopup = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Mode: ${if (laserConfig.mode == LaserMode.TRAIL) "Comet Tail" else "Spotlight Dot"}") },
+                                    onClick = {
+                                        laserConfig = laserConfig.copy(
+                                            mode = if (laserConfig.mode == LaserMode.TRAIL) LaserMode.DOT else LaserMode.TRAIL
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (laserConfig.mode == LaserMode.TRAIL) Icons.Default.Gesture else Icons.Default.Lens,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            LaserConstants.PALETTE_HEX.forEach { hex ->
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(22.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(hex))
+                                                        .clickable {
+                                                            laserConfig = laserConfig.copy(colorHex = hex)
+                                                        }
+                                                        .then(
+                                                            if (laserConfig.colorHex == hex) {
+                                                                Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                                            } else Modifier
+                                                        )
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {}
+                                )
+
+                                if (laserConfig.mode == LaserMode.TRAIL) {
+                                    DropdownMenuItem(
+                                        text = { Text("Decay: ${laserConfig.durationMs}ms") },
+                                        onClick = {
+                                            val nextDuration = when (laserConfig.durationMs) {
+                                                LaserConstants.DURATION_FAST_MS -> LaserConstants.DURATION_DEFAULT_MS
+                                                LaserConstants.DURATION_DEFAULT_MS -> LaserConstants.DURATION_LONG_MS
+                                                else -> LaserConstants.DURATION_FAST_MS
+                                            }
+                                            laserConfig = laserConfig.copy(durationMs = nextDuration)
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Timer,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    )
+                                }
+                            }
                         }
 
                         DockDivider(orientation = orientation)
@@ -1033,6 +1129,13 @@ fun MultiPageEditorScreen(
                         }
                     }
                 }
+
+                // ─── Ephemeral Presentation Laser Pointer Overlay ───────────────────
+                LaserPointerOverlay(
+                    isLaserActive = currentTool == InkTool.LASER,
+                    config = laserConfig,
+                    modifier = Modifier.fillMaxSize()
+                )
             } // Close Box(modifier = Modifier.weight(1f))
             } // Close Row
         } // Close AdaptiveDockScaffold

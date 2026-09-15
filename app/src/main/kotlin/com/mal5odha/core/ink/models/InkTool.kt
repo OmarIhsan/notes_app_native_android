@@ -9,5 +9,6 @@ enum class InkTool {
     SHAPE,
     SHAPE_CIRCLE,
     SHAPE_RECTANGLE,
-    SHAPE_ARROW
+    SHAPE_ARROW,
+    LASER
 }

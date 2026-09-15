@@ -99,7 +99,7 @@ fun DirectPageCanvas(
             .fillMaxSize()
             .pointerInput(pageId, isReadOnly, currentTool, currentColor, currentWidth, eraserThickness, eraserTarget, audioPlaybackPositionMs) {
                 if (isReadOnly) return@pointerInput
-                if (currentTool == InkTool.TEXT) return@pointerInput
+                if (currentTool == InkTool.TEXT || currentTool == InkTool.LASER) return@pointerInput
 
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)

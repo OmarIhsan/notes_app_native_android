@@ -1247,18 +1247,25 @@ constructor(
                 com.mal5odha.core.data.models.Ml5TextAnnotation {
                 return com.mal5odha.core.data.models.Ml5TextAnnotation(
                         id = id,
-                        text = text,
-                        x = x,
-                        y = y,
-                        width = width,
-                        height = height,
-                        fontSize = fontSize,
-                        color = color,
+                        text = content,
+                        x = xNorm,
+                        y = yNorm,
+                        width = widthNorm,
+                        height = heightNorm,
+                        fontSize = fontSizeSp,
+                        color = colorHex.toInt(),
                         rotation = rotation,
                         backgroundColor = backgroundColor,
-                        alignment = alignment,
+                        alignment = when (textAlign) {
+                                androidx.compose.ui.text.style.TextAlign.Center -> "CENTER"
+                                androidx.compose.ui.text.style.TextAlign.End, androidx.compose.ui.text.style.TextAlign.Right -> "END"
+                                else -> "START"
+                        },
                         audioSessionId = audioSessionId,
-                        audioTimestampMs = audioTimestampMs
+                        audioTimestampMs = audioTimestampMs,
+                        isBold = isBold,
+                        isItalic = isItalic,
+                        isUnderline = isUnderline
                 )
         }
 
@@ -1266,16 +1273,24 @@ constructor(
                 com.mal5odha.core.ink.models.TextAnnotation {
                 return com.mal5odha.core.ink.models.TextAnnotation(
                         id = id,
-                        text = text,
-                        x = x,
-                        y = y,
-                        width = width,
-                        height = height,
-                        fontSize = fontSize,
-                        color = color,
+                        pageId = "",
+                        xNorm = x,
+                        yNorm = y,
+                        widthNorm = width,
+                        heightNorm = height,
+                        content = text,
+                        fontSizeSp = fontSize,
+                        colorHex = (color.toLong() and 0xFFFFFFFFL),
+                        isBold = isBold,
+                        isItalic = isItalic,
+                        isUnderline = isUnderline,
+                        textAlign = when (alignment) {
+                                "CENTER" -> androidx.compose.ui.text.style.TextAlign.Center
+                                "END" -> androidx.compose.ui.text.style.TextAlign.End
+                                else -> androidx.compose.ui.text.style.TextAlign.Start
+                        },
                         rotation = rotation,
                         backgroundColor = backgroundColor,
-                        alignment = alignment,
                         audioSessionId = audioSessionId,
                         audioTimestampMs = audioTimestampMs
                 )

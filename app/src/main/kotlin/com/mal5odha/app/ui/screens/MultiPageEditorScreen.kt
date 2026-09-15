@@ -4,6 +4,7 @@ import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.*
@@ -168,6 +169,32 @@ fun MultiPageEditorScreen(
     val lazyListState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
+    var focusedTextAnnotationId by remember { mutableStateOf<String?>(null) }
+    var focusedTextBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val imeInsets = WindowInsets.ime
+    val imeBottomPx = imeInsets.getBottom(density)
+    val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+
+    // Phase: Dynamic IME Insets Auto-Scroll to keep active text box visible
+    LaunchedEffect(imeBottomPx, focusedTextAnnotationId) {
+        if (imeBottomPx > 0 && focusedTextAnnotationId != null) {
+            focusedTextBounds?.let { bounds ->
+                val keyboardTopPx = windowHeightPx - imeBottomPx
+                val safeMarginPx = with(density) { 24.dp.toPx() }
+                val targetCardBottom = keyboardTopPx - safeMarginPx
+                if (bounds.bottom > targetCardBottom) {
+                    val scrollNeeded = bounds.bottom - targetCardBottom
+                    coroutineScope.launch {
+                        lazyListState.animateScrollBy(scrollNeeded)
+                    }
+                }
+            }
+        }
+    }
+
     // ─── Active Visible Page Index Tracking ──────────────────────────────────────
     val currentVisiblePageIndex by remember {
         derivedStateOf {
@@ -224,7 +251,9 @@ fun MultiPageEditorScreen(
     }
 
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
         color = MaterialTheme.colorScheme.surface
     ) {
         AdaptiveDockScaffold(
@@ -446,6 +475,19 @@ fun MultiPageEditorScreen(
                                 imageVector = Icons.Default.Crop,
                                 contentDescription = "Lasso Selection",
                                 tint = if (currentTool == InkTool.LASSO) PrimaryCyanBlue else capsuleIconTint,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // ─── Text Tool (Tap-to-Place Freeform Text Box) ─────────
+                        IconButton(
+                            onClick = { currentTool = InkTool.TEXT },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TextFields,
+                                contentDescription = "Text Tool (T)",
+                                tint = if (currentTool == InkTool.TEXT) PrimaryCyanBlue else capsuleIconTint,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -802,7 +844,10 @@ fun MultiPageEditorScreen(
                                             onSeekAudio = { stroke -> viewModel.seekToStrokeAudio(stroke) },
                                             onPinchZoom = { factor ->
                                                 documentZoomScale = (documentZoomScale * factor).coerceIn(0.5f, 3.0f)
-                                            }
+                                            },
+                                            focusedTextAnnotationId = focusedTextAnnotationId,
+                                            onFocusTextAnnotation = { focusedTextAnnotationId = it },
+                                            onUpdateTextBounds = { focusedTextBounds = it }
                                         )
                                     }
 
@@ -848,7 +893,10 @@ fun MultiPageEditorScreen(
                                                 onSeekAudio = { stroke -> viewModel.seekToStrokeAudio(stroke) },
                                                 onPinchZoom = { factor ->
                                                     documentZoomScale = (documentZoomScale * factor).coerceIn(0.5f, 3.0f)
-                                                }
+                                                },
+                                                focusedTextAnnotationId = focusedTextAnnotationId,
+                                                onFocusTextAnnotation = { focusedTextAnnotationId = it },
+                                                onUpdateTextBounds = { focusedTextBounds = it }
                                             )
                                         } else {
                                             val leftAspectRatio = if (pair[0].heightPt > 0f) pair[0].widthPt / pair[0].heightPt else (595f / 842f)
@@ -892,7 +940,10 @@ fun MultiPageEditorScreen(
                                     onSeekAudio = { stroke -> viewModel.seekToStrokeAudio(stroke) },
                                     onPinchZoom = { factor ->
                                         documentZoomScale = (documentZoomScale * factor).coerceIn(0.5f, 3.0f)
-                                    }
+                                    },
+                                    focusedTextAnnotationId = focusedTextAnnotationId,
+                                    onFocusTextAnnotation = { focusedTextAnnotationId = it },
+                                    onUpdateTextBounds = { focusedTextBounds = it }
                                 )
                             }
                         }
@@ -1250,6 +1301,9 @@ private fun PageCard(
     onRemoveMedia: (String) -> Unit,
     onSeekAudio: (com.mal5odha.core.ink.models.Stroke) -> Unit,
     onPinchZoom: (Float) -> Unit,
+    focusedTextAnnotationId: String? = null,
+    onFocusTextAnnotation: (String?) -> Unit = {},
+    onUpdateTextBounds: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val pageAspectRatio = page.aspectRatio
@@ -1312,14 +1366,26 @@ private fun PageCard(
                             Modifier.pointerInput(Unit) {
                                 detectTapGestures(
                                     onTap = { offset ->
-                                        val normX = (offset.x / pageWidthPx).coerceIn(0.05f, 0.6f)
-                                        val normY = (offset.y / pageHeightPx).coerceIn(0.05f, 0.85f)
+                                        val defaultWidthPx = with(density) { 220.dp.toPx() }
+                                        val placement = com.mal5odha.core.ink.math.TextAnnotationTransformSolver.calculateNormalizedTapPlacement(
+                                            tapPx = offset,
+                                            pageWidthPx = pageWidthPx,
+                                            pageHeightPx = pageHeightPx,
+                                            defaultWidthPx = defaultWidthPx
+                                        )
                                         val newAnnotation = com.mal5odha.core.ink.models.TextAnnotation(
-                                            x = normX,
-                                            y = normY,
-                                            text = ""
+                                            id = java.util.UUID.randomUUID().toString(),
+                                            pageId = page.id,
+                                            xNorm = placement.xNorm,
+                                            yNorm = placement.yNorm,
+                                            widthNorm = placement.widthNorm,
+                                            heightNorm = 0f,
+                                            content = "",
+                                            fontSizeSp = 16f,
+                                            colorHex = 0xFF1A1A1AL
                                         )
                                         onSaveText(newAnnotation)
+                                        onFocusTextAnnotation(newAnnotation.id)
                                     }
                                 )
                             }
@@ -1390,8 +1456,15 @@ private fun PageCard(
                         pageHeightPx = pageHeightPx,
                         isToolActive = currentTool == InkTool.TEXT && !isReadOnly,
                         isReadOnly = isReadOnly,
+                        isSelected = focusedTextAnnotationId == annotation.id,
+                        onSelect = { onFocusTextAnnotation(annotation.id) },
+                        onDeselect = { if (focusedTextAnnotationId == annotation.id) onFocusTextAnnotation(null) },
+                        onPositionChanged = onUpdateTextBounds,
                         onAnnotationChanged = onSaveText,
-                        onDelete = { onRemoveText(annotation.id) }
+                        onDelete = {
+                            if (focusedTextAnnotationId == annotation.id) onFocusTextAnnotation(null)
+                            onRemoveText(annotation.id)
+                        }
                     )
                 }
 

@@ -51,7 +51,10 @@ data class Ml5TextAnnotation(
         @SerializedName("backgroundColor") val backgroundColor: Int? = null,
         @SerializedName("alignment") val alignment: String = "START",
         @SerializedName("audioSessionId") val audioSessionId: String? = null,
-        @SerializedName("audioTimestampMs") val audioTimestampMs: Long = 0L
+        @SerializedName("audioTimestampMs") val audioTimestampMs: Long = 0L,
+        @SerializedName("isBold") val isBold: Boolean = false,
+        @SerializedName("isItalic") val isItalic: Boolean = false,
+        @SerializedName("isUnderline") val isUnderline: Boolean = false
 )
 
 data class Ml5MediaAnnotation(

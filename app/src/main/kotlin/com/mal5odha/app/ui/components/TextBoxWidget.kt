@@ -37,9 +37,9 @@ fun TextBoxWidget(annotation: TextAnnotation, onAnnotationChanged: (TextAnnotati
                                         onDragEnd = {
                                             onAnnotationChanged(
                                                     annotation.copy(
-                                                            x = offsetX,
-                                                            y = offsetY,
-                                                            text = text
+                                                            xNorm = offsetX,
+                                                            yNorm = offsetY,
+                                                            content = text
                                                     )
                                             )
                                         }
@@ -60,7 +60,7 @@ fun TextBoxWidget(annotation: TextAnnotation, onAnnotationChanged: (TextAnnotati
                 value = text,
                 onValueChange = { newText ->
                     text = newText
-                    onAnnotationChanged(annotation.copy(x = offsetX, y = offsetY, text = newText))
+                    onAnnotationChanged(annotation.copy(xNorm = offsetX, yNorm = offsetY, content = newText))
                 },
                 textStyle =
                         TextStyle(

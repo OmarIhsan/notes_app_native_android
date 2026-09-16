@@ -112,6 +112,7 @@ import java.util.UUID
  *    - Add new pages dynamically in the document stream.
  *    - Smooth auto-scrolling to selected thumbnail pages.
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MultiPageEditorScreen(
     documentId: String?,
@@ -171,6 +172,16 @@ fun MultiPageEditorScreen(
 
     var focusedTextAnnotationId by remember { mutableStateOf<String?>(null) }
     var focusedTextBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
+    // Mutual Focus Eviction: switching tools immediately clears active selection and hides soft keyboard
+    LaunchedEffect(currentTool) {
+        if (focusedTextAnnotationId != null) {
+            focusedTextAnnotationId = null
+            keyboardController?.hide()
+        }
+    }
 
     val density = androidx.compose.ui.platform.LocalDensity.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -385,6 +396,7 @@ fun MultiPageEditorScreen(
                         IconButton(
                             onClick = {
                                 currentTool = InkTool.PEN
+                                viewModel.setEffectiveTool(InkTool.PEN)
                                 if (selectedColor == android.graphics.Color.parseColor("#FFF176")) {
                                     selectedColor = android.graphics.Color.BLACK
                                     selectedWidth = 5f
@@ -403,6 +415,7 @@ fun MultiPageEditorScreen(
                         IconButton(
                             onClick = {
                                 currentTool = InkTool.HIGHLIGHTER
+                                viewModel.setEffectiveTool(InkTool.HIGHLIGHTER)
                                 if (selectedColor == android.graphics.Color.BLACK) {
                                     selectedColor = android.graphics.Color.parseColor("#FFE082")
                                     selectedWidth = 24f
@@ -419,7 +432,10 @@ fun MultiPageEditorScreen(
                         }
 
                         IconButton(
-                            onClick = { currentTool = InkTool.ERASER },
+                            onClick = {
+                                currentTool = InkTool.ERASER
+                                viewModel.setEffectiveTool(InkTool.ERASER)
+                            },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
@@ -432,7 +448,10 @@ fun MultiPageEditorScreen(
 
                         // ─── Shape Tools: Circle, Rectangle, Arrow ──────────────────
                         IconButton(
-                            onClick = { currentTool = InkTool.SHAPE_CIRCLE },
+                            onClick = {
+                                currentTool = InkTool.SHAPE_CIRCLE
+                                viewModel.setEffectiveTool(InkTool.SHAPE_CIRCLE)
+                            },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
@@ -444,7 +463,10 @@ fun MultiPageEditorScreen(
                         }
 
                         IconButton(
-                            onClick = { currentTool = InkTool.SHAPE_RECTANGLE },
+                            onClick = {
+                                currentTool = InkTool.SHAPE_RECTANGLE
+                                viewModel.setEffectiveTool(InkTool.SHAPE_RECTANGLE)
+                            },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
@@ -456,7 +478,10 @@ fun MultiPageEditorScreen(
                         }
 
                         IconButton(
-                            onClick = { currentTool = InkTool.SHAPE_ARROW },
+                            onClick = {
+                                currentTool = InkTool.SHAPE_ARROW
+                                viewModel.setEffectiveTool(InkTool.SHAPE_ARROW)
+                            },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
@@ -468,7 +493,10 @@ fun MultiPageEditorScreen(
                         }
 
                         IconButton(
-                            onClick = { currentTool = InkTool.LASSO },
+                            onClick = {
+                                currentTool = InkTool.LASSO
+                                viewModel.setEffectiveTool(InkTool.LASSO)
+                            },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
@@ -481,13 +509,32 @@ fun MultiPageEditorScreen(
 
                         // ─── Text Tool (Tap-to-Place Freeform Text Box) ─────────
                         IconButton(
-                            onClick = { currentTool = InkTool.TEXT },
+                            onClick = {
+                                currentTool = InkTool.TEXT
+                                viewModel.setEffectiveTool(InkTool.TEXT)
+                            },
                             modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.TextFields,
                                 contentDescription = "Text Tool (T)",
                                 tint = if (currentTool == InkTool.TEXT) PrimaryCyanBlue else capsuleIconTint,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // ─── Sticky Note / Card Sticker Tool ─────────────────────
+                        IconButton(
+                            onClick = {
+                                currentTool = InkTool.STICKY_CARD
+                                viewModel.setEffectiveTool(InkTool.STICKY_CARD)
+                            },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.StickyNote2,
+                                contentDescription = "Sticky Note",
+                                tint = if (currentTool.isStickyCard) PrimaryCyanBlue else capsuleIconTint,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -500,6 +547,7 @@ fun MultiPageEditorScreen(
                                         showLaserOptionsPopup = !showLaserOptionsPopup
                                     } else {
                                         currentTool = InkTool.LASER
+                                        viewModel.setEffectiveTool(InkTool.LASER)
                                     }
                                 },
                                 modifier = Modifier.size(44.dp)
@@ -1362,28 +1410,41 @@ private fun PageCard(
                     .fillMaxSize()
                     .clipToBounds()
                     .then(
-                        if (currentTool == InkTool.TEXT && !isReadOnly) {
-                            Modifier.pointerInput(Unit) {
+                        if (currentTool.isPlacementTool && !isReadOnly) {
+                            Modifier.pointerInput(currentTool) {
                                 detectTapGestures(
                                     onTap = { offset ->
-                                        val defaultWidthPx = with(density) { 220.dp.toPx() }
+                                        val isSticky = currentTool.isStickyCard
+                                        val defaultWidthPx = with(density) { (if (isSticky) 240.dp else 220.dp).toPx() }
                                         val placement = com.mal5odha.core.ink.math.TextAnnotationTransformSolver.calculateNormalizedTapPlacement(
                                             tapPx = offset,
                                             pageWidthPx = pageWidthPx,
                                             pageHeightPx = pageHeightPx,
                                             defaultWidthPx = defaultWidthPx
                                         )
-                                        val newAnnotation = com.mal5odha.core.ink.models.TextAnnotation(
-                                            id = java.util.UUID.randomUUID().toString(),
-                                            pageId = page.id,
-                                            xNorm = placement.xNorm,
-                                            yNorm = placement.yNorm,
-                                            widthNorm = placement.widthNorm,
-                                            heightNorm = 0f,
-                                            content = "",
-                                            fontSizeSp = 16f,
-                                            colorHex = 0xFF1A1A1AL
-                                        )
+                                        val newAnnotation = if (isSticky) {
+                                            com.mal5odha.core.ink.models.TextAnnotation.createStickyCard(
+                                                pageId = page.id,
+                                                xNorm = placement.xNorm,
+                                                yNorm = placement.yNorm,
+                                                widthNorm = placement.widthNorm.coerceAtLeast(0.28f),
+                                                title = "",
+                                                body = "",
+                                                cardColorHex = 0xFFFFF9C4L
+                                            )
+                                        } else {
+                                            com.mal5odha.core.ink.models.TextAnnotation(
+                                                id = java.util.UUID.randomUUID().toString(),
+                                                pageId = page.id,
+                                                xNorm = placement.xNorm,
+                                                yNorm = placement.yNorm,
+                                                widthNorm = placement.widthNorm,
+                                                heightNorm = 0f,
+                                                content = "",
+                                                fontSizeSp = 16f,
+                                                colorHex = 0xFF1A1A1AL
+                                            )
+                                        }
                                         onSaveText(newAnnotation)
                                         onFocusTextAnnotation(newAnnotation.id)
                                     }
@@ -1455,7 +1516,8 @@ private fun PageCard(
                             annotation = annotation,
                             pageWidthPx = pageWidthPx,
                             pageHeightPx = pageHeightPx,
-                            isToolActive = currentTool == InkTool.TEXT && !isReadOnly,
+                            currentTool = currentTool,
+                            isToolActive = currentTool.isPlacementTool && !isReadOnly,
                             isReadOnly = isReadOnly,
                             isSelected = focusedTextAnnotationId == annotation.id,
                             onSelect = { onFocusTextAnnotation(annotation.id) },

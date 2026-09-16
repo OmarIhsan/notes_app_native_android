@@ -54,7 +54,10 @@ data class Ml5TextAnnotation(
         @SerializedName("audioTimestampMs") val audioTimestampMs: Long = 0L,
         @SerializedName("isBold") val isBold: Boolean = false,
         @SerializedName("isItalic") val isItalic: Boolean = false,
-        @SerializedName("isUnderline") val isUnderline: Boolean = false
+        @SerializedName("isUnderline") val isUnderline: Boolean = false,
+        @SerializedName("isCard") val isCard: Boolean = false,
+        @SerializedName("title") val title: String = "",
+        @SerializedName("isPinned") val isPinned: Boolean = false
 )
 
 data class Ml5MediaAnnotation(

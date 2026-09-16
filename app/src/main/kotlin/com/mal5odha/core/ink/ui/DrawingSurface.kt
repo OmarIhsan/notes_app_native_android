@@ -428,7 +428,7 @@ class DrawingSurface(context: Context) :
             return false
         }
 
-        if (currentTool == InkTool.TEXT) {
+        if (currentTool.isPlacementTool) {
             return false
         }
 
@@ -624,7 +624,7 @@ class DrawingSurface(context: Context) :
     private fun triggerHoldToSnap(bounds: RectF) {
         val stroke = currentStroke ?: return
         if (stroke.points.size < 4) return
-        if (currentTool == InkTool.ERASER || currentTool == InkTool.LASSO || currentTool == InkTool.TEXT) return
+        if (currentTool == InkTool.ERASER || currentTool == InkTool.LASSO || currentTool.isPlacementTool) return
 
         val pageStroke = stroke.copy(points = toPagePoints(stroke.points, bounds).toMutableList())
         val result = shapeDetectionService.detectShape(pageStroke)
@@ -649,7 +649,7 @@ class DrawingSurface(context: Context) :
     }
 
     private fun handleActionDown(normX: Float, normY: Float, pressure: Float, bounds: RectF) {
-        if (currentTool == InkTool.TEXT) return
+        if (currentTool.isPlacementTool) return
 
         if (isAudioPlaybackActive) {
             val tappedStroke = undoRedoManager.history.value.lastOrNull { s ->

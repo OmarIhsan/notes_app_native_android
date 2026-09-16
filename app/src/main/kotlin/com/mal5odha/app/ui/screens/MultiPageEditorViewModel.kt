@@ -104,6 +104,13 @@ constructor(
         private val _audioPlaybackPositionMs = MutableStateFlow(0L)
         val audioPlaybackPositionMs: StateFlow<Long> = _audioPlaybackPositionMs.asStateFlow()
 
+        private val _effectiveTool = MutableStateFlow(com.mal5odha.core.ink.models.InkTool.PEN)
+        val effectiveTool: StateFlow<com.mal5odha.core.ink.models.InkTool> = _effectiveTool.asStateFlow()
+
+        fun setEffectiveTool(tool: com.mal5odha.core.ink.models.InkTool) {
+            _effectiveTool.value = tool
+        }
+
         init {
             viewModelScope.launch {
                 audioSyncManager.syncState.collect { sync ->
@@ -1265,7 +1272,10 @@ constructor(
                         audioTimestampMs = audioTimestampMs,
                         isBold = isBold,
                         isItalic = isItalic,
-                        isUnderline = isUnderline
+                        isUnderline = isUnderline,
+                        isCard = isCard,
+                        title = title,
+                        isPinned = isPinned
                 )
         }
 
@@ -1292,7 +1302,10 @@ constructor(
                         rotation = rotation,
                         backgroundColor = backgroundColor,
                         audioSessionId = audioSessionId,
-                        audioTimestampMs = audioTimestampMs
+                        audioTimestampMs = audioTimestampMs,
+                        isCard = isCard,
+                        title = title,
+                        isPinned = isPinned
                 )
         }
 

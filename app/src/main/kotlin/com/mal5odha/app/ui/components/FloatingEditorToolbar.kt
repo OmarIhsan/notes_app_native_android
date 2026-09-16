@@ -143,6 +143,15 @@ fun FloatingEditorToolbar(
                     )
                 }
 
+                // Sticky Note Sticker
+                IconButton(onClick = { onToolSelected(InkTool.STICKY_CARD) }) {
+                    Icon(
+                        imageVector = Icons.Default.StickyNote2,
+                        contentDescription = "Sticky Note Sticker",
+                        tint = if (currentTool.isStickyCard) PrimaryCyanBlue else ActionDarkBlue
+                    )
+                }
+
                 // Laser
                 IconButton(onClick = { onToolSelected(InkTool.LASER) }) {
                     Icon(

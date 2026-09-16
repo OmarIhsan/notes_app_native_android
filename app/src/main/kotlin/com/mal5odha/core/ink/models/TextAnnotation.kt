@@ -25,7 +25,10 @@ data class TextAnnotation(
     val rotation: Float = 0f,
     val backgroundColor: Int? = null,
     var audioSessionId: String? = null,
-    var audioTimestampMs: Long = 0L
+    var audioTimestampMs: Long = 0L,
+    val isCard: Boolean = false,
+    val title: String = "",
+    val isPinned: Boolean = false
 ) {
     // ─── Backwards Compatibility Properties ──────────────────────────────────
     val text: String get() = content
@@ -77,6 +80,88 @@ data class TextAnnotation(
         rotation = rotation,
         backgroundColor = backgroundColor,
         audioSessionId = audioSessionId,
-        audioTimestampMs = audioTimestampMs
+        audioTimestampMs = audioTimestampMs,
+        isCard = false,
+        title = "",
+        isPinned = false
     )
+
+    companion object {
+        fun createStickyCard(
+            pageId: String,
+            xNorm: Float,
+            yNorm: Float,
+            widthNorm: Float = 0.32f,
+            title: String = "",
+            body: String = "",
+            cardColorHex: Long = 0xFFFFF9C4L,
+            isPinned: Boolean = false,
+            textAlign: TextAlign = TextAlign.Start
+        ): TextAnnotation = TextAnnotation(
+            id = UUID.randomUUID().toString(),
+            pageId = pageId,
+            xNorm = xNorm,
+            yNorm = yNorm,
+            widthNorm = widthNorm,
+            heightNorm = 0f,
+            content = body,
+            title = title,
+            fontSizeSp = 14f,
+            colorHex = 0xFF1C1B1FL,
+            backgroundColor = cardColorHex.toInt(),
+            textAlign = textAlign,
+            isCard = true,
+            isPinned = isPinned
+        )
+    }
 }
+
+/**
+ * Minimal Title + Body "Sticky Card" Sticker metadata model.
+ */
+data class StickyCardAnnotation(
+    val id: String = UUID.randomUUID().toString(),
+    val pageId: String = "",
+    val xNorm: Float = 0.1f,
+    val yNorm: Float = 0.1f,
+    val widthNorm: Float = 0.32f, // Default card width (~240dp - 280dp)
+    val title: String = "",
+    val body: String = "",
+    val cardColorHex: Long = 0xFFFFF9C4L, // Default: Pastel Post-it Yellow
+    val isPinned: Boolean = false,
+    val alignment: String = "START"
+)
+
+fun StickyCardAnnotation.toTextAnnotation(): TextAnnotation = TextAnnotation(
+    id = id,
+    pageId = pageId,
+    xNorm = xNorm,
+    yNorm = yNorm,
+    widthNorm = widthNorm,
+    heightNorm = 0f,
+    content = body,
+    title = title,
+    fontSizeSp = 14f,
+    colorHex = 0xFF1C1B1FL,
+    backgroundColor = cardColorHex.toInt(),
+    isCard = true,
+    isPinned = isPinned,
+    textAlign = when (alignment) {
+        "CENTER" -> TextAlign.Center
+        "END" -> TextAlign.End
+        else -> TextAlign.Start
+    }
+)
+
+fun TextAnnotation.toStickyCardAnnotation(): StickyCardAnnotation = StickyCardAnnotation(
+    id = id,
+    pageId = pageId,
+    xNorm = xNorm,
+    yNorm = yNorm,
+    widthNorm = widthNorm,
+    title = title,
+    body = content,
+    cardColorHex = (backgroundColor?.toLong()?.and(0xFFFFFFFFL)) ?: 0xFFFFF9C4L,
+    isPinned = isPinned,
+    alignment = alignment
+)

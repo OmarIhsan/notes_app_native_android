@@ -41,6 +41,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.mal5odha.app.ui.theme.PrimaryCyanBlue
 import com.mal5odha.core.ink.math.TextAnnotationTransformSolver
+import com.mal5odha.core.ink.models.InkTool
 import com.mal5odha.core.ink.models.TextAnnotation
 import kotlin.math.roundToInt
 
@@ -62,6 +63,7 @@ fun TextAnnotationOverlay(
     annotation: TextAnnotation,
     pageWidthPx: Float,
     pageHeightPx: Float,
+    currentTool: InkTool = InkTool.TEXT,
     isToolActive: Boolean = false,
     isReadOnly: Boolean = false,
     isSelected: Boolean = false,
@@ -71,14 +73,53 @@ fun TextAnnotationOverlay(
     onAnnotationChanged: (TextAnnotation) -> Unit,
     onDelete: () -> Unit
 ) {
+    val isStickyTool = currentTool.isStickyCard
+    val isTextTool = currentTool == InkTool.TEXT
+
+    if (annotation.isCard) {
+        val isCardChannelActive = isStickyTool && isToolActive && !isReadOnly
+        StickyNoteWidget(
+            annotation = annotation,
+            pageWidthPx = pageWidthPx,
+            pageHeightPx = pageHeightPx,
+            isToolActive = isCardChannelActive,
+            isReadOnly = isReadOnly || !isStickyTool,
+            isSelected = isSelected && isStickyTool,
+            onSelect = {
+                if (isStickyTool) {
+                    onSelect()
+                }
+            },
+            onDeselect = onDeselect,
+            onPositionChanged = onPositionChanged,
+            onAnnotationChanged = onAnnotationChanged,
+            onDelete = onDelete
+        )
+        return
+    }
+
+    // Generic Text Box Branch (isCard == false)
+    if (!isTextTool && !isSelected) {
+        // If Text tool is not active and this box is not selected, render text box in pure idle mode (no handles, no click-to-focus)
+        IdleTextBoxRenderer(
+            annotation = annotation,
+            pageWidthPx = pageWidthPx,
+            pageHeightPx = pageHeightPx
+        )
+        return
+    }
+
+    val isTextChannelActive = isTextTool && isToolActive && !isReadOnly
+    val isTextChannelSelected = isSelected && isTextTool
+
     val density = LocalDensity.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
 
-    var isEditing by remember(isSelected) { mutableStateOf(isSelected) }
+    var isEditing by remember(isTextChannelSelected) { mutableStateOf(isTextChannelSelected) }
 
     // Synchronize editing state with external selection or tool change
-    if (isReadOnly || !isToolActive) {
+    if (isReadOnly || !isTextChannelActive) {
         if (isEditing) {
             isEditing = false
             onDeselect()
@@ -306,15 +347,19 @@ fun TextAnnotationOverlay(
                     shape = RoundedCornerShape(6.dp)
                 )
                 .padding(horizontal = 6.dp, vertical = 6.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    if (!isReadOnly && isToolActive && !isEditing) {
-                        isEditing = true
-                        onSelect()
-                    }
-                }
+                .then(
+                    if (!isReadOnly && isTextChannelActive) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (!isEditing) {
+                                isEditing = true
+                                onSelect()
+                            }
+                        }
+                    } else Modifier
+                )
         ) {
             if (isEditing && !isReadOnly) {
                 // ─── Editing Mode: BasicTextField with decoupled TextFieldValue ──────
@@ -484,3 +529,45 @@ fun TextAnnotationOverlay(
         }
     }
 }
+
+/**
+ * Ultra-lightweight Idle Mode Renderer for Text Boxes when Text tool is not active.
+ * Renders raw text without touch interception, transform handles, or editing state allocations.
+ */
+@Composable
+private fun IdleTextBoxRenderer(
+    annotation: TextAnnotation,
+    pageWidthPx: Float,
+    pageHeightPx: Float
+) {
+    val pixelX = annotation.xNorm * pageWidthPx
+    val pixelY = annotation.yNorm * pageHeightPx
+    val pixelW = (annotation.widthNorm.coerceAtLeast(0.08f)) * pageWidthPx
+    val density = LocalDensity.current
+    val boxWidthDp = with(density) { pixelW.toDp() }
+
+    val textStyle = TextStyle(
+        fontSize = annotation.fontSizeSp.sp,
+        color = Color(annotation.colorHex),
+        fontWeight = if (annotation.isBold) FontWeight.Bold else FontWeight.Normal,
+        fontStyle = if (annotation.isItalic) FontStyle.Italic else FontStyle.Normal,
+        textDecoration = if (annotation.isUnderline) TextDecoration.Underline else TextDecoration.None,
+        textAlign = annotation.textAlign
+    )
+
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(pixelX.roundToInt(), pixelY.roundToInt()) }
+            .width(boxWidthDp.coerceAtLeast(80.dp))
+            .wrapContentHeight(align = Alignment.Top)
+            .padding(horizontal = 6.dp, vertical = 6.dp)
+    ) {
+        Text(
+            text = annotation.content,
+            style = textStyle,
+            softWrap = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+

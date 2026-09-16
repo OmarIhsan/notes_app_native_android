@@ -23,7 +23,23 @@ enum class LaserMode {
  */
 data class LaserPoint(
     val offset: Offset,
-    val timestampMs: Long
+    val timestampMs: Long,
+    val pressure: Float = 1.0f
+) {
+    val x: Float get() = offset.x
+    val y: Float get() = offset.y
+
+    constructor(x: Float, y: Float, timestampMs: Long, pressure: Float = 1.0f) :
+        this(Offset(x, y), timestampMs, pressure)
+}
+
+/**
+ * Isolated stroke segment representing a single contiguous touch-down sequence.
+ * Enforces strict boundary isolation to prevent polyline bridging across distinct gestures.
+ */
+data class LaserStrokeSegment(
+    val id: Long = System.currentTimeMillis(),
+    val points: MutableList<LaserPoint> = mutableListOf()
 )
 
 /**

@@ -1450,22 +1450,24 @@ private fun PageCard(
 
                 // 5. Rich Text Annotations
                 textList.forEach { annotation ->
-                    com.mal5odha.app.ui.components.TextAnnotationOverlay(
-                        annotation = annotation,
-                        pageWidthPx = pageWidthPx,
-                        pageHeightPx = pageHeightPx,
-                        isToolActive = currentTool == InkTool.TEXT && !isReadOnly,
-                        isReadOnly = isReadOnly,
-                        isSelected = focusedTextAnnotationId == annotation.id,
-                        onSelect = { onFocusTextAnnotation(annotation.id) },
-                        onDeselect = { if (focusedTextAnnotationId == annotation.id) onFocusTextAnnotation(null) },
-                        onPositionChanged = onUpdateTextBounds,
-                        onAnnotationChanged = onSaveText,
-                        onDelete = {
-                            if (focusedTextAnnotationId == annotation.id) onFocusTextAnnotation(null)
-                            onRemoveText(annotation.id)
-                        }
-                    )
+                    key(annotation.id) {
+                        com.mal5odha.app.ui.components.TextAnnotationOverlay(
+                            annotation = annotation,
+                            pageWidthPx = pageWidthPx,
+                            pageHeightPx = pageHeightPx,
+                            isToolActive = currentTool == InkTool.TEXT && !isReadOnly,
+                            isReadOnly = isReadOnly,
+                            isSelected = focusedTextAnnotationId == annotation.id,
+                            onSelect = { onFocusTextAnnotation(annotation.id) },
+                            onDeselect = { if (focusedTextAnnotationId == annotation.id) onFocusTextAnnotation(null) },
+                            onPositionChanged = onUpdateTextBounds,
+                            onAnnotationChanged = onSaveText,
+                            onDelete = {
+                                if (focusedTextAnnotationId == annotation.id) onFocusTextAnnotation(null)
+                                onRemoveText(annotation.id)
+                            }
+                        )
+                    }
                 }
 
                 // 6. Search Match Highlights Overlay

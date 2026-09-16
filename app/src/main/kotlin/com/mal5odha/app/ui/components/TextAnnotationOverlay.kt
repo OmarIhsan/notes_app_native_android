@@ -22,9 +22,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -50,8 +52,9 @@ import kotlin.math.roundToInt
  * - Dynamic vertical height auto-expansion downwards (top edge stationary Y_top = const).
  * - Stationary opposite-anchor horizontal resizing via left/right pill handles.
  * - Page translation via top drag handle.
- * - Detached floating formatting bar with 5 color swatches, font stepper, B/I/U toggles, alignment, and haptic delete.
+ * - Detached floating formatting bar with color swatches, font stepper, B/I/U toggles, alignment, and delete.
  * - Optimized Idle / Pinned mode with lightweight Text rendering for 144Hz scroll fluidity.
+ * - Decoupled TextFieldValue lifecycle keyed strictly by annotation.id to prevent text truncation/reset on resize.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -82,20 +85,60 @@ fun TextAnnotationOverlay(
         }
     }
 
-    var normX by remember(annotation.xNorm) { mutableFloatStateOf(annotation.xNorm) }
-    var normY by remember(annotation.yNorm) { mutableFloatStateOf(annotation.yNorm) }
-    var normW by remember(annotation.widthNorm) { mutableFloatStateOf(annotation.widthNorm.coerceAtLeast(0.08f)) }
-    var normH by remember(annotation.heightNorm) { mutableFloatStateOf(annotation.heightNorm) }
+    var isDraggingHandle by remember { mutableStateOf(false) }
+
+    var normX by remember(annotation.id) { mutableFloatStateOf(annotation.xNorm) }
+    var normY by remember(annotation.id) { mutableFloatStateOf(annotation.yNorm) }
+    var normW by remember(annotation.id) { mutableFloatStateOf(annotation.widthNorm.coerceAtLeast(0.08f)) }
+    var normH by remember(annotation.id) { mutableFloatStateOf(annotation.heightNorm) }
     var toolbarWidthPx by remember { mutableFloatStateOf(0f) }
     var toolbarHeightPx by remember { mutableFloatStateOf(0f) }
 
-    var content by remember(annotation.content) { mutableStateOf(annotation.content) }
-    var fontSizeSp by remember(annotation.fontSizeSp) { mutableFloatStateOf(annotation.fontSizeSp) }
-    var colorHex by remember(annotation.colorHex) { mutableLongStateOf(annotation.colorHex) }
-    var isBold by remember(annotation.isBold) { mutableStateOf(annotation.isBold) }
-    var isItalic by remember(annotation.isItalic) { mutableStateOf(annotation.isItalic) }
-    var isUnderline by remember(annotation.isUnderline) { mutableStateOf(annotation.isUnderline) }
-    var textAlign by remember(annotation.textAlign) { mutableStateOf(annotation.textAlign) }
+    // Decoupled TextFieldValue state keyed strictly by annotation.id
+    var textFieldValue by remember(annotation.id) {
+        mutableStateOf(
+            TextFieldValue(
+                text = annotation.content,
+                selection = TextRange(annotation.content.length)
+            )
+        )
+    }
+
+    // Ensure incoming content updates from external models don't clobber active typing
+    LaunchedEffect(annotation.content) {
+        if (annotation.content != textFieldValue.text) {
+            textFieldValue = textFieldValue.copy(
+                text = annotation.content,
+                selection = TextRange(annotation.content.length)
+            )
+        }
+    }
+
+    // Synchronize layout coordinates when not actively dragging handles
+    LaunchedEffect(annotation.xNorm, annotation.yNorm, annotation.widthNorm, annotation.heightNorm) {
+        if (!isDraggingHandle) {
+            normX = annotation.xNorm
+            normY = annotation.yNorm
+            normW = annotation.widthNorm.coerceAtLeast(0.08f)
+            normH = annotation.heightNorm
+        }
+    }
+
+    var fontSizeSp by remember(annotation.id) { mutableFloatStateOf(annotation.fontSizeSp) }
+    var colorHex by remember(annotation.id) { mutableLongStateOf(annotation.colorHex) }
+    var isBold by remember(annotation.id) { mutableStateOf(annotation.isBold) }
+    var isItalic by remember(annotation.id) { mutableStateOf(annotation.isItalic) }
+    var isUnderline by remember(annotation.id) { mutableStateOf(annotation.isUnderline) }
+    var textAlign by remember(annotation.id) { mutableStateOf(annotation.textAlign) }
+
+    LaunchedEffect(annotation.fontSizeSp, annotation.colorHex, annotation.isBold, annotation.isItalic, annotation.isUnderline, annotation.textAlign) {
+        fontSizeSp = annotation.fontSizeSp
+        colorHex = annotation.colorHex
+        isBold = annotation.isBold
+        isItalic = annotation.isItalic
+        isUnderline = annotation.isUnderline
+        textAlign = annotation.textAlign
+    }
 
     val pixelX = normX * pageWidthPx
     val pixelY = normY * pageHeightPx
@@ -108,7 +151,7 @@ fun TextAnnotationOverlay(
         newY: Float = normY,
         newW: Float = normW,
         newH: Float = normH,
-        newContent: String = content,
+        newContent: String = textFieldValue.text,
         newFontSize: Float = fontSizeSp,
         newColor: Long = colorHex,
         newBold: Boolean = isBold,
@@ -198,7 +241,7 @@ fun TextAnnotationOverlay(
                         yNorm = normY,
                         widthNorm = normW,
                         heightNorm = normH,
-                        content = content,
+                        content = textFieldValue.text,
                         fontSizeSp = fontSizeSp,
                         colorHex = colorHex,
                         isBold = isBold,
@@ -247,7 +290,10 @@ fun TextAnnotationOverlay(
                     val computedNormH = TextAnnotationTransformSolver.computeNormalizedHeight(measuredH, pageHeightPx)
                     if (kotlin.math.abs(computedNormH - normH) > 0.002f) {
                         normH = computedNormH
-                        commitChanges(newH = computedNormH)
+                        // Suppress database saves while dragging handles; commit once on drag end
+                        if (!isDraggingHandle) {
+                            commitChanges(newH = computedNormH)
+                        }
                     }
                 }
                 .background(
@@ -271,12 +317,12 @@ fun TextAnnotationOverlay(
                 }
         ) {
             if (isEditing && !isReadOnly) {
-                // ─── Editing Mode: BasicTextField with active IME input ──────
+                // ─── Editing Mode: BasicTextField with decoupled TextFieldValue ──────
                 BasicTextField(
-                    value = content,
-                    onValueChange = { newText ->
-                        content = newText
-                        commitChanges(newContent = newText)
+                    value = textFieldValue,
+                    onValueChange = { newValue ->
+                        textFieldValue = newValue
+                        commitChanges(newContent = newValue.text)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -284,7 +330,7 @@ fun TextAnnotationOverlay(
                     textStyle = textStyle,
                     cursorBrush = SolidColor(PrimaryCyanBlue),
                     decorationBox = { innerTextField ->
-                        if (content.isEmpty()) {
+                        if (textFieldValue.text.isEmpty()) {
                             Text(
                                 text = "Type here...",
                                 style = textStyle.copy(color = Color.Gray.copy(alpha = 0.6f)),
@@ -297,8 +343,8 @@ fun TextAnnotationOverlay(
             } else {
                 // ─── Idle / Pinned Mode: Ultra-lightweight Text composable ────
                 Text(
-                    text = content.ifEmpty { if (isToolActive) "Tap to type..." else "" },
-                    style = if (content.isEmpty()) textStyle.copy(color = Color.Gray.copy(alpha = 0.4f)) else textStyle,
+                    text = textFieldValue.text.ifEmpty { if (isToolActive) "Tap to type..." else "" },
+                    style = if (textFieldValue.text.isEmpty()) textStyle.copy(color = Color.Gray.copy(alpha = 0.4f)) else textStyle,
                     softWrap = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -315,7 +361,12 @@ fun TextAnnotationOverlay(
                     .size(width = 56.dp, height = 36.dp)
                     .pointerInput(annotation.id) {
                         detectDragGestures(
-                            onDragEnd = { commitChanges() }
+                            onDragStart = { isDraggingHandle = true },
+                            onDragEnd = {
+                                isDraggingHandle = false
+                                commitChanges()
+                            },
+                            onDragCancel = { isDraggingHandle = false }
                         ) { change, dragAmount ->
                             change.consume()
                             val deltaXNorm = dragAmount.x / pageWidthPx
@@ -370,7 +421,12 @@ fun TextAnnotationOverlay(
                     .background(PrimaryCyanBlue)
                     .pointerInput(annotation.id) {
                         detectDragGestures(
-                            onDragEnd = { commitChanges() }
+                            onDragStart = { isDraggingHandle = true },
+                            onDragEnd = {
+                                isDraggingHandle = false
+                                commitChanges()
+                            },
+                            onDragCancel = { isDraggingHandle = false }
                         ) { change, dragAmount ->
                             change.consume()
                             val deltaXNorm = dragAmount.x / pageWidthPx
@@ -397,7 +453,12 @@ fun TextAnnotationOverlay(
                     .background(PrimaryCyanBlue)
                     .pointerInput(annotation.id) {
                         detectDragGestures(
-                            onDragEnd = { commitChanges() }
+                            onDragStart = { isDraggingHandle = true },
+                            onDragEnd = {
+                                isDraggingHandle = false
+                                commitChanges()
+                            },
+                            onDragCancel = { isDraggingHandle = false }
                         ) { change, dragAmount ->
                             change.consume()
                             val deltaXNorm = dragAmount.x / pageWidthPx
